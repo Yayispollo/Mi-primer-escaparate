@@ -7,7 +7,6 @@ import gsap from 'gsap'
 import Stats from 'three/examples/jsm/libs/stats.module.js'
 
 const stats = new Stats()
-
 document.body.appendChild(stats.dom)
 
 // --- 1. ESCENA Y CARGADORES ---
@@ -29,7 +28,7 @@ new RGBELoader().load(
   () => console.log('Modo de luz por defecto activado')
 )
 
-// --- 3. SUELO Y PEDESTAL (MATERIALES: Standard, Phong, Toon, Basic) ---
+// --- 3. SUELO Y PEDESTAL ---
 const marbleTexture = textureLoader.load('/textures/marble.jpg')
 marbleTexture.wrapS = marbleTexture.wrapT = THREE.RepeatWrapping
 marbleTexture.repeat.set(4, 4)
@@ -127,28 +126,24 @@ wallGroup.add(
 )
 scene.add(wallGroup)
 
-
-// --- 5. ESFERA Y MATERIAL 5: MeshMatcapMaterial ---
-
+// --- 5. ESFERA Y MATERIAL MATCAP ---
 const matcapMaterial = new THREE.MeshMatcapMaterial()
 textureLoader.load(
-'/textures/matcaps/gold.png',
-(texture) => {
-texture.colorSpace = THREE.SRGBColorSpace
-matcapMaterial.matcap = texture
-matcapMaterial.needsUpdate = true
-}
+  '/textures/matcaps/gold.png',
+  (texture) => {
+    texture.colorSpace = THREE.SRGBColorSpace
+    matcapMaterial.matcap = texture
+    matcapMaterial.needsUpdate = true
+  }
 )
 const matcapSphere = new THREE.Mesh(
-new THREE.SphereGeometry(1, 64, 64),
-matcapMaterial
+  new THREE.SphereGeometry(1, 64, 64),
+  matcapMaterial
 )
- 
 matcapSphere.position.set(-5, 1, 2)
- 
 scene.add(matcapSphere)
 
-// --- 6. ESFERAS FLOTANTES (GENERADAS DESDE ARRAY DE OBJETOS) ---
+// --- 6. ESFERAS FLOTANTES ---
 const floatAnimations = []
 const spheresData = [
   { color: '#d32f2f', radius: 0.4, pos: [-4.5, -1.1, 1.8] },
@@ -201,10 +196,7 @@ const triggerSphereBounce = (sphere, index) => {
   })
 }
 
-
-
 // --- 7. CAJAS DE MADERA ---
-
 const crateMaterial = new THREE.MeshStandardMaterial({ color: '#b88100', roughness: 0.7, metalness: 0.05 })
 textureLoader.load('/textures/wood.jpg', (texture) => {
   texture.colorSpace = THREE.SRGBColorSpace
@@ -272,7 +264,9 @@ gltfLoader.load(
 
     glassCase = new THREE.Mesh(new THREE.BoxGeometry(caseWidth, caseHeight, caseWidth), glassMaterial)
     glassCase.position.set(0, -0.3 + caseHeight / 2, 0)
-    scene.add(glassCase)
+    
+    // Añadimos la vitrina de cristal también al grupo para que gire junto con el modelo
+    miguelGroup.add(glassCase)
   },
   undefined,
   (error) => console.error('Error cargando modelo:', error)
@@ -297,6 +291,7 @@ const sizes = { width: window.innerWidth, height: window.innerHeight }
 const camera = new THREE.PerspectiveCamera(55, sizes.width / sizes.height, 0.1, 300)
 camera.position.set(0, 0.8, 5.5)
 scene.add(camera)
+
 const canvas = document.querySelector('canvas.webgl') || document.createElement('canvas')
 if (!document.body.contains(canvas)) {
   canvas.className = 'webgl'
@@ -322,13 +317,16 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
 
-// --- 11. EVENTOS (CLICK, MOUSEMOVE CON HOVER Y KEYDOWN) ---
+// --- 11. EVENTOS (CLICK, MOUSEMOVE, TECLADO Y RESIZE) ---
 const raycaster = new THREE.Raycaster()
 const mouse = new THREE.Vector2()
 let hoveredObject = null
 let isLightOn = true
+let isAutoRotating = true // Controla si gira automáticamente
+let isAlternativeBg = false
+const keysPressed = {}    // Mantiene registro de teclas sostenidas
 
-// Hover Detection (Raycaster + Normalización)
+// Hover Detection
 window.addEventListener('mousemove', (event) => {
   mouse.x = (event.clientX / sizes.width) * 2 - 1
   mouse.y = -(event.clientY / sizes.height) * 2 + 1
@@ -376,13 +374,30 @@ window.addEventListener('click', () => {
   }
 })
 
-// Evento de Teclado (Tecla Space cambia el ambiente)
-let isAlternativeBg = false
+// Eventos de Teclado (Sostenidos y Presión Unica)
 window.addEventListener('keydown', (event) => {
+  keysPressed[event.code] = true
+
+  // 'L' -> Alterna la luz del escaparate
+  if (event.code === 'KeyL') {
+    isLightOn = !isLightOn
+    gallerySpotlight.intensity = isLightOn ? 160 : 0
+  }
+
+  // 'R' -> Alterna la rotación automática del escaparate
+  if (event.code === 'KeyR') {
+    isAutoRotating = !isAutoRotating
+  }
+
+  // 'Space' -> Cambia el color del fondo de la escena
   if (event.code === 'Space') {
     isAlternativeBg = !isAlternativeBg
     scene.background = new THREE.Color(isAlternativeBg ? '#2c3e50' : '#86c7b9')
   }
+})
+
+window.addEventListener('keyup', (event) => {
+  keysPressed[event.code] = false
 })
 
 window.addEventListener('resize', () => {
@@ -394,24 +409,34 @@ window.addEventListener('resize', () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 })
 
-// --- 12. BUCLE DE ANIMACIÓN CON MATH.SIN() Y ROTACIÓN LINEAL ---
+// --- 12. BUCLE DE ANIMACIÓN (TICK) ---
 const clock = new THREE.Clock()
 
 const tick = () => {
   controls.update()
   const elapsedTime = clock.getElapsedTime()
 
-  // 1. Animación Lineal
-  if (miguelModel) {
-    miguelGroup.rotation.y = elapsedTime * 0.25
+  // 1. Control del Escaparate por Teclado y Rotación
+  if (miguelGroup) {
+    if (isAutoRotating) {
+      miguelGroup.rotation.y = elapsedTime * 0.25
+    }
+
+    // Rotación manual con flechas si se mantienen presionadas
+    if (keysPressed['ArrowLeft']) {
+      miguelGroup.rotation.y -= 0.03
+    }
+    if (keysPressed['ArrowRight']) {
+      miguelGroup.rotation.y += 0.03
+    }
   }
-matcapSphere.rotation.y += 0.01
-  // 2. Animación Oscilatoria con Math.sin() sobre la luz focal Z
+
+  matcapSphere.rotation.y += 0.01
+
+  // 2. Animación Oscilatoria de la Luz Focal
   gallerySpotlight.position.z = 1.5 + Math.sin(elapsedTime * 2) * 0.3
 
-stats.update()
-
-
+  stats.update()
   renderer.render(scene, camera)
   window.requestAnimationFrame(tick)
 }
