@@ -4,6 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import gsap from 'gsap'
+import Stats from 'three/examples/jsm/libs/stats.module.js'
+
+const stats = new Stats()
+
+document.body.appendChild(stats.dom)
 
 // --- 1. ESCENA Y CARGADORES ---
 const scene = new THREE.Scene()
@@ -403,6 +408,9 @@ const tick = () => {
 matcapSphere.rotation.y += 0.01
   // 2. Animación Oscilatoria con Math.sin() sobre la luz focal Z
   gallerySpotlight.position.z = 1.5 + Math.sin(elapsedTime * 2) * 0.3
+
+stats.update()
+
 
   renderer.render(scene, camera)
   window.requestAnimationFrame(tick)
